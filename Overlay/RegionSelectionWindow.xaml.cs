@@ -1,7 +1,11 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Shapes;
 using ScreenBlurGuard.Native;
 
 namespace ScreenBlurGuard.Overlay;
@@ -9,14 +13,24 @@ namespace ScreenBlurGuard.Overlay;
 public sealed class RegionSelectionResult
 {
     public required IntPtr TargetHwnd { get; init; }
-    public required RECT ClientRect { get; init; }
+    public required IReadOnlyList<RECT> Regions { get; init; }
 }
 
+/// <summary>
+/// Full-screen drag-to-select overlay. The FIRST drag identifies the target app (by
+/// hit-testing the point under it) and locks it; every subsequent drag adds another blur
+/// region within that same locked target, since the app only ever targets one app window at
+/// a time but supports multiple regions inside it. Enter finishes, Backspace undoes the last
+/// region, Escape cancels the whole selection.
+/// </summary>
 public partial class RegionSelectionWindow : Window
 {
     private const int MinSelectionSize = 10;
 
     private Point? _dragStartScreen;
+    private IntPtr? _lockedTargetHwnd;
+    private readonly List<RECT> _confirmedRegions = new();
+    private readonly List<Rectangle> _confirmedVisuals = new();
 
     public event Action<RegionSelectionResult>? Completed;
     public event Action? Cancelled;
@@ -38,10 +52,18 @@ public partial class RegionSelectionWindow : Window
 
     private void OnKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Escape)
+        switch (e.Key)
         {
-            Cancelled?.Invoke();
-            Close();
+            case Key.Escape:
+                Cancelled?.Invoke();
+                Close();
+                break;
+            case Key.Enter:
+                FinishSelection();
+                break;
+            case Key.Back when _confirmedRegions.Count > 0:
+                RemoveLastRegion();
+                break;
         }
     }
 
@@ -82,6 +104,7 @@ public partial class RegionSelectionWindow : Window
         var endScreen = PointToScreen(e.GetPosition(this));
         var startScreen = _dragStartScreen.Value;
         _dragStartScreen = null;
+        SelectionRect.Visibility = Visibility.Collapsed;
 
         int left = (int)Math.Round(Math.Min(startScreen.X, endScreen.X));
         int top = (int)Math.Round(Math.Min(startScreen.Y, endScreen.Y));
@@ -90,23 +113,35 @@ public partial class RegionSelectionWindow : Window
 
         if (right - left < MinSelectionSize || bottom - top < MinSelectionSize)
         {
-            // Treat as an accidental click, not a real selection — stay open and let the user retry.
-            SelectionRect.Visibility = Visibility.Collapsed;
+            // Treat as an accidental click, not a real selection — keep the session open.
             return;
         }
 
-        // This selection window itself is full-screen and topmost, so WindowFromPoint would
-        // otherwise hit *it* (or close and hit whatever destroys next) instead of the real
-        // target window underneath. Hide it first so the point test sees through to the target.
+        if (_lockedTargetHwnd == null && !TryLockTarget(left, top, right, bottom))
+        {
+            Cancelled?.Invoke();
+            Close();
+            return;
+        }
+
+        TryAddRegion(left, top, right, bottom);
+        UpdateInstructions();
+    }
+
+    /// <summary>
+    /// This selection window itself is full-screen and topmost, so WindowFromPoint would
+    /// otherwise hit *it* instead of the real target window underneath. Hide it just for the
+    /// point test, then show it again so further drags can add more regions.
+    /// </summary>
+    private bool TryLockTarget(int left, int top, int right, int bottom)
+    {
         Hide();
 
         var centerScreen = new NativeMethods.POINT { X = (left + right) / 2, Y = (top + bottom) / 2 };
         var hitHwnd = NativeMethods.WindowFromPoint(centerScreen);
         if (hitHwnd == IntPtr.Zero)
         {
-            Cancelled?.Invoke();
-            Close();
-            return;
+            return false;
         }
 
         var targetHwnd = NativeMethods.GetAncestor(hitHwnd, NativeMethods.GA_ROOT);
@@ -114,6 +149,17 @@ public partial class RegionSelectionWindow : Window
         {
             targetHwnd = hitHwnd;
         }
+
+        _lockedTargetHwnd = targetHwnd;
+
+        Show();
+        Activate();
+        return true;
+    }
+
+    private void TryAddRegion(int left, int top, int right, int bottom)
+    {
+        var targetHwnd = _lockedTargetHwnd!.Value;
 
         var topLeftClient = new NativeMethods.POINT { X = left, Y = top };
         var bottomRightClient = new NativeMethods.POINT { X = right, Y = bottom };
@@ -132,12 +178,65 @@ public partial class RegionSelectionWindow : Window
 
         if (clampedRect.Width < MinSelectionSize || clampedRect.Height < MinSelectionSize)
         {
-            Cancelled?.Invoke();
-            Close();
+            // Dragged mostly/entirely outside the locked target's current client area.
             return;
         }
 
-        Completed?.Invoke(new RegionSelectionResult { TargetHwnd = targetHwnd, ClientRect = clampedRect });
+        _confirmedRegions.Add(clampedRect);
+        _confirmedVisuals.Add(AddConfirmedVisual(left, top, right, bottom));
+    }
+
+    private Rectangle AddConfirmedVisual(int left, int top, int right, int bottom)
+    {
+        var topLeftLocal = PointFromScreen(new Point(left, top));
+        var bottomRightLocal = PointFromScreen(new Point(right, bottom));
+
+        var visual = new Rectangle
+        {
+            Stroke = Brushes.LimeGreen,
+            StrokeThickness = 2,
+            Fill = new SolidColorBrush(Color.FromArgb(0x40, 0x3A, 0xFF, 0x6B)),
+            Width = bottomRightLocal.X - topLeftLocal.X,
+            Height = bottomRightLocal.Y - topLeftLocal.Y,
+        };
+        Canvas.SetLeft(visual, topLeftLocal.X);
+        Canvas.SetTop(visual, topLeftLocal.Y);
+
+        SelectionCanvas.Children.Add(visual);
+        return visual;
+    }
+
+    private void RemoveLastRegion()
+    {
+        int lastIndex = _confirmedRegions.Count - 1;
+        _confirmedRegions.RemoveAt(lastIndex);
+
+        SelectionCanvas.Children.Remove(_confirmedVisuals[lastIndex]);
+        _confirmedVisuals.RemoveAt(lastIndex);
+
+        UpdateInstructions();
+    }
+
+    private void FinishSelection()
+    {
+        if (_lockedTargetHwnd == null || _confirmedRegions.Count == 0)
+        {
+            return;
+        }
+
+        Completed?.Invoke(new RegionSelectionResult
+        {
+            TargetHwnd = _lockedTargetHwnd.Value,
+            Regions = _confirmedRegions.ToList(),
+        });
         Close();
+    }
+
+    private void UpdateInstructions()
+    {
+        InstructionsText.Text = _confirmedRegions.Count == 0
+            ? "드래그해서 블러 영역을 선택하세요. (Esc: 취소)"
+            : $"블러 영역 {_confirmedRegions.Count}개 선택됨 — 계속 드래그해서 추가하거나 " +
+              "Enter로 완료, Backspace로 마지막 취소, Esc로 전체 취소하세요.";
     }
 }

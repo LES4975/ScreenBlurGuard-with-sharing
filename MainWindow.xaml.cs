@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Windows;
 using ScreenBlurGuard.Native;
 using ScreenBlurGuard.Overlay;
@@ -27,10 +28,11 @@ public partial class MainWindow : Window
     private WinEventHookService? _tracker;
     private IntPtr _targetHwnd;
 
-    // The selected sub-region, stored as a FIXED pixel offset + size from the target
-    // window's client-area origin (see plan doc for why not a proportional fraction).
-    // Clipped safely on shrink; a resize is flagged rather than silently trusted.
-    private int _offsetLeft, _offsetTop, _regionWidth, _regionHeight;
+    // The selected sub-regions, each stored as a FIXED pixel offset + size (as a RECT: Left/Top
+    // is the offset, Width/Height is the fixed size) from the target window's client-area
+    // origin (see plan doc for why not a proportional fraction). Clipped safely on shrink;
+    // a resize is flagged rather than silently trusted.
+    private readonly List<RECT> _regionOffsets = new();
     private int _lastKnownClientWidth = -1;
     private int _lastKnownClientHeight = -1;
 
@@ -63,10 +65,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        _offsetLeft = result.ClientRect.Left;
-        _offsetTop = result.ClientRect.Top;
-        _regionWidth = result.ClientRect.Width;
-        _regionHeight = result.ClientRect.Height;
+        _regionOffsets.Clear();
+        _regionOffsets.AddRange(result.Regions);
         _lastKnownClientWidth = clientRect.Width;
         _lastKnownClientHeight = clientRect.Height;
 
@@ -87,9 +87,9 @@ public partial class MainWindow : Window
         };
         _mirrorPreview.Show();
 
-        if (TryComputeRegion(out var region, out _))
+        if (TryComputeRegions(out var regions, out _))
         {
-            _mirrorPreview.UpdateRegion(region);
+            _mirrorPreview.UpdateRegions(regions);
         }
 
         _tracker = new WinEventHookService(_targetHwnd);
@@ -103,13 +103,13 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Recomputes the sub-region's current client-relative geometry from its stored fixed
-    /// pixel offset/size and the target's *current* client rect, clipping safely if the
-    /// target has shrunk.
+    /// Recomputes every sub-region's current client-relative geometry from its stored fixed
+    /// pixel offset/size and the target's *current* client rect, dropping/clipping safely if
+    /// the target has shrunk.
     /// </summary>
-    private bool TryComputeRegion(out RECT regionClientRect, out bool resized)
+    private bool TryComputeRegions(out List<RECT> regions, out bool resized)
     {
-        regionClientRect = default;
+        regions = new List<RECT>();
         resized = false;
 
         if (!NativeMethods.GetClientRect(_targetHwnd, out var clientRect) ||
@@ -123,17 +123,21 @@ public partial class MainWindow : Window
         _lastKnownClientWidth = clientRect.Width;
         _lastKnownClientHeight = clientRect.Height;
 
-        int left = Math.Clamp(_offsetLeft, 0, clientRect.Width);
-        int top = Math.Clamp(_offsetTop, 0, clientRect.Height);
-        int right = Math.Clamp(_offsetLeft + _regionWidth, 0, clientRect.Width);
-        int bottom = Math.Clamp(_offsetTop + _regionHeight, 0, clientRect.Height);
-
-        if (right - left <= 0 || bottom - top <= 0)
+        foreach (var offset in _regionOffsets)
         {
-            return false;
+            int left = Math.Clamp(offset.Left, 0, clientRect.Width);
+            int top = Math.Clamp(offset.Top, 0, clientRect.Height);
+            int right = Math.Clamp(offset.Right, 0, clientRect.Width);
+            int bottom = Math.Clamp(offset.Bottom, 0, clientRect.Height);
+
+            if (right - left <= 0 || bottom - top <= 0)
+            {
+                continue;
+            }
+
+            regions.Add(new RECT { Left = left, Top = top, Right = right, Bottom = bottom });
         }
 
-        regionClientRect = new RECT { Left = left, Top = top, Right = right, Bottom = bottom };
         return true;
     }
 
@@ -147,9 +151,9 @@ public partial class MainWindow : Window
 
             _mirrorPreview.ResizeCapture(clientRect.Width, clientRect.Height);
 
-            if (TryComputeRegion(out var region, out var resized))
+            if (TryComputeRegions(out var regions, out var resized))
             {
-                _mirrorPreview.UpdateRegion(region);
+                _mirrorPreview.UpdateRegions(regions);
             }
 
             if (resized)
@@ -183,6 +187,7 @@ public partial class MainWindow : Window
         _mirrorPreview = null;
 
         _targetHwnd = IntPtr.Zero;
+        _regionOffsets.Clear();
         _lastKnownClientWidth = -1;
         _lastKnownClientHeight = -1;
     }

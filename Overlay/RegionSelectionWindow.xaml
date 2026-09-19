@@ -10,7 +10,7 @@
         Background="#40000000"
         WindowStartupLocation="Manual">
     <Grid>
-        <TextBlock Text="드래그해서 블러 영역을 선택하세요. (Esc: 취소)"
+        <TextBlock x:Name="InstructionsText" Text="드래그해서 블러 영역을 선택하세요. (Esc: 취소)"
                    Foreground="White" FontSize="16" FontWeight="Bold"
                    HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0" />
         <Canvas x:Name="SelectionCanvas">

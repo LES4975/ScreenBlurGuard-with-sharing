@@ -1,8 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using ScreenBlurGuard.Native;
 
@@ -26,6 +29,7 @@ public partial class MirrorPreviewWindow : Window
 {
     private readonly IntPtr _targetHwnd;
     private readonly DispatcherTimer _captureTimer;
+    private readonly List<Rectangle> _blurRects = new();
     private int _captureWidth;
     private int _captureHeight;
 
@@ -54,13 +58,48 @@ public partial class MirrorPreviewWindow : Window
         RootCanvas.Height = clientHeight;
     }
 
-    /// <summary>Repositions the blur patch, in this window's own client-area coordinates.</summary>
-    public void UpdateRegion(RECT regionRect)
+    /// <summary>
+    /// Repositions the blur patches, in this window's own client-area coordinates. Grows or
+    /// shrinks the pool of blur <see cref="Rectangle"/>s to match <paramref name="regions"/>.
+    /// </summary>
+    public void UpdateRegions(IReadOnlyList<RECT> regions)
     {
-        Canvas.SetLeft(BlurRect, regionRect.Left);
-        Canvas.SetTop(BlurRect, regionRect.Top);
-        BlurRect.Width = regionRect.Width;
-        BlurRect.Height = regionRect.Height;
+        while (_blurRects.Count > regions.Count)
+        {
+            RootCanvas.Children.Remove(_blurRects[^1]);
+            _blurRects.RemoveAt(_blurRects.Count - 1);
+        }
+
+        while (_blurRects.Count < regions.Count)
+        {
+            var rect = CreateBlurRectangle();
+            RootCanvas.Children.Add(rect);
+            _blurRects.Add(rect);
+        }
+
+        for (int i = 0; i < regions.Count; i++)
+        {
+            var rect = _blurRects[i];
+            Canvas.SetLeft(rect, regions[i].Left);
+            Canvas.SetTop(rect, regions[i].Top);
+            rect.Width = regions[i].Width;
+            rect.Height = regions[i].Height;
+        }
+    }
+
+    private static Rectangle CreateBlurRectangle()
+    {
+        return new Rectangle
+        {
+            Fill = new LinearGradientBrush(
+                new GradientStopCollection
+                {
+                    new GradientStop(Color.FromRgb(0x50, 0x50, 0x50), 0.0),
+                    new GradientStop(Color.FromRgb(0x70, 0x70, 0x70), 0.5),
+                    new GradientStop(Color.FromRgb(0x50, 0x50, 0x50), 1.0),
+                },
+                new Point(0, 0), new Point(1, 1)),
+        };
     }
 
     private void CaptureFrame()
