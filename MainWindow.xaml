@@ -38,6 +38,23 @@
             </StackPanel>
         </Border>
 
+        <TextBlock Text="효과" FontWeight="Bold" FontSize="12" Foreground="#FF666666" Margin="0,0,0,6"/>
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+            <RadioButton x:Name="BlurStyleRadio" Content="블러" GroupName="BlurStyle" IsChecked="True" Margin="0,0,20,0" VerticalContentAlignment="Center"/>
+            <RadioButton x:Name="MosaicStyleRadio" Content="모자이크" GroupName="BlurStyle" VerticalContentAlignment="Center"/>
+        </StackPanel>
+
+        <Grid Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="농도" FontWeight="Bold" FontSize="12" Foreground="#FF666666" VerticalAlignment="Center"/>
+            <TextBlock x:Name="IntensityValueText" Grid.Column="1" Text="25%" FontSize="12" Foreground="#FF666666" HorizontalAlignment="Right"/>
+        </Grid>
+        <Slider x:Name="IntensitySlider" Minimum="0" Maximum="100" Value="25" TickFrequency="10"
+                Margin="0,0,0,16" ValueChanged="OnIntensityChanged"/>
+
         <TextBlock Text="대상 지정" FontWeight="Bold" FontSize="12" Foreground="#FF666666" Margin="0,0,0,6"/>
         <Button Content="영역 선택해서 미러링 창 생성" Click="OnSelectRegionClick"
                 Background="#FF2D7DD2" Foreground="White" BorderThickness="0" FontWeight="Bold"/>

@@ -41,7 +41,19 @@ public partial class MainWindow : Window
         InitializeComponent();
         _mirrorSession.TargetResized += OnMirrorTargetResized;
         _mirrorSession.TargetDestroyed += OnMirrorTargetDestroyed;
+
+        // Wired here rather than via XAML Checked="..." so IsChecked="True" on BlurStyleRadio
+        // doesn't fire before MosaicStyleRadio (and _mirrorSession) exist yet.
+        BlurStyleRadio.Checked += (_, _) => _mirrorSession.SetStyle(BlurStyle.Blur);
+        MosaicStyleRadio.Checked += (_, _) => _mirrorSession.SetStyle(BlurStyle.Mosaic);
+
         RefreshRestoreButton();
+    }
+
+    private void OnIntensityChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        IntensityValueText.Text = $"{(int)Math.Round(e.NewValue)}%";
+        _mirrorSession.SetIntensity(e.NewValue);
     }
 
     private enum StatusLevel { Neutral, Active, Warning, Error }

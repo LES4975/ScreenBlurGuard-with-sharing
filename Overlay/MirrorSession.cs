@@ -25,6 +25,12 @@ public sealed class MirrorSession : IDisposable
     private int _lastKnownClientWidth = -1;
     private int _lastKnownClientHeight = -1;
 
+    // Persist across Stop()/TryStart() cycles within the same session object, so picking
+    // mosaic (or a given intensity) once keeps it selected for the next mirror too, not just
+    // the current one. Not saved to disk — resets to defaults on app restart, by design.
+    private BlurStyle _style = BlurStyle.Blur;
+    private double _intensityPercent = 25;
+
     public IntPtr TargetHwnd { get; private set; }
     public bool IsActive => _mirrorPreview != null;
 
@@ -58,6 +64,8 @@ public sealed class MirrorSession : IDisposable
             Left = 100,
             Top = 100,
         };
+        _mirrorPreview.SetStyle(_style);
+        _mirrorPreview.SetIntensity(_intensityPercent);
         _mirrorPreview.Show();
 
         if (TryComputeRegions(out var regions, out _))
@@ -75,6 +83,20 @@ public sealed class MirrorSession : IDisposable
         _tracker.Start();
 
         return true;
+    }
+
+    /// <summary>Switches the effect for the active mirror (if any) immediately, and for the next one started.</summary>
+    public void SetStyle(BlurStyle style)
+    {
+        _style = style;
+        _mirrorPreview?.SetStyle(style);
+    }
+
+    /// <summary>Sets the effect's strength (0–100) for the active mirror (if any) immediately, and for the next one started.</summary>
+    public void SetIntensity(double intensityPercent)
+    {
+        _intensityPercent = intensityPercent;
+        _mirrorPreview?.SetIntensity(intensityPercent);
     }
 
     public void Stop()
