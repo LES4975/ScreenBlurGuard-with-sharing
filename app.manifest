@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="ScreenBlurGuard.app"/>
+
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+    <security>
+      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+        <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/> <!-- Windows 10/11 -->
+    </application>
+  </compatibility>
+
+  <!--
+    No manifest previously meant Windows treated this app as DPI-Unaware and bitmap-stretched
+    it to fit each monitor's scale — coordinates the app itself computes (mouse drag positions,
+    GetClientRect/ScreenToClient results) would then disagree with reality on any monitor above
+    100% scaling, and worse so with multiple differently-scaled monitors. PerMonitorV2 makes
+    Windows report real physical-pixel coordinates and re-renders on DPI change instead.
+  -->
+  <asmv3:application xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
+    <asmv3:windowsSettings xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">
+      <dpiAware>true/pm</dpiAware>
+    </asmv3:windowsSettings>
+    <asmv3:windowsSettings xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">
+      <dpiAwareness>PerMonitorV2</dpiAwareness>
+    </asmv3:windowsSettings>
+  </asmv3:application>
+</assembly>

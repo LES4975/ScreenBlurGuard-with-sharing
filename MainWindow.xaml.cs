@@ -39,35 +39,54 @@ public partial class MainWindow : Window
     private int _lastKnownClientWidth = -1;
     private int _lastKnownClientHeight = -1;
 
-    private AppSettings? _savedSettings;
+    // The saved profile (if any) whose process is currently running — set by PrepareRestoreButton,
+    // consumed by OnRestoreSettingsClick. Each target app gets its own profile in the settings
+    // file (keyed by process name) so saving one app's regions never overwrites another's.
+    private TargetProfile? _matchedProfile;
 
     public MainWindow()
     {
         InitializeComponent();
-        PrepareRestoreButton();
+        RefreshRestoreButton();
     }
 
     /// <summary>
-    /// Loads the last-saved region set (if any) and, only if a window from the same process
-    /// is currently running, enables the "저장된 설정 불러오기" button so the user can skip
-    /// re-selecting regions by hand.
+    /// Loads saved profiles and, if any of their target processes is currently running,
+    /// enables the "저장된 설정 불러오기" button so the user can skip re-selecting regions by
+    /// hand. If more than one saved profile's app happens to be running at once, only the
+    /// first match is offered (the UI is a single button, not a picker).
+    ///
+    /// Called not just at startup but also right after a fresh selection is saved — the button
+    /// otherwise kept showing whatever was true when the app launched (e.g. still pointing at
+    /// Notepad after the user had just re-selected regions on a browser instead), since nothing
+    /// re-evaluated it mid-session.
     /// </summary>
-    private void PrepareRestoreButton()
+    private void RefreshRestoreButton()
     {
-        _savedSettings = SettingsStore.Load();
-        if (_savedSettings is not { Regions.Count: > 0, TargetProcessName: not null })
+        _matchedProfile = null;
+        RestoreSettingsButton.IsEnabled = false;
+        RestoreSettingsButton.Content = "저장된 설정 불러오기";
+
+        var settings = SettingsStore.Load();
+        if (settings is not { Profiles.Count: > 0 })
         {
             return;
         }
 
-        if (FindRunningWindowByProcessName(_savedSettings.TargetProcessName) == IntPtr.Zero)
+        // Search from the most-recently-saved end first (see SaveCurrentSettings), so that if
+        // several saved profiles' apps happen to be running at once, the one the user touched
+        // last wins over one just saved earlier in the session.
+        _matchedProfile = settings.Profiles.AsEnumerable().Reverse().FirstOrDefault(p =>
+            p.Regions.Count > 0 && FindRunningWindowByProcessName(p.ProcessName) != IntPtr.Zero);
+
+        if (_matchedProfile == null)
         {
-            StatusText.Text = $"저장된 설정({_savedSettings.TargetProcessName})이 있지만 해당 앱이 실행 중이 아닙니다.";
+            StatusText.Text = $"저장된 설정이 {settings.Profiles.Count}개 있지만 해당 앱이 실행 중이 아닙니다.";
             return;
         }
 
         RestoreSettingsButton.IsEnabled = true;
-        RestoreSettingsButton.Content = $"저장된 설정 불러오기 ({_savedSettings.TargetProcessName}, 영역 {_savedSettings.Regions.Count}개)";
+        RestoreSettingsButton.Content = $"저장된 설정 불러오기 ({_matchedProfile.ProcessName}, 영역 {_matchedProfile.Regions.Count}개)";
     }
 
     private static IntPtr FindRunningWindowByProcessName(string processName)
@@ -86,12 +105,12 @@ public partial class MainWindow : Window
 
     private void OnRestoreSettingsClick(object sender, RoutedEventArgs e)
     {
-        if (_savedSettings?.TargetProcessName == null)
+        if (_matchedProfile == null)
         {
             return;
         }
 
-        var hwnd = FindRunningWindowByProcessName(_savedSettings.TargetProcessName);
+        var hwnd = FindRunningWindowByProcessName(_matchedProfile.ProcessName);
         if (hwnd == IntPtr.Zero)
         {
             StatusText.Text = "저장된 대상 앱을 찾지 못했습니다. 먼저 해당 앱을 실행하세요.";
@@ -109,7 +128,7 @@ public partial class MainWindow : Window
         }
 
         _regionOffsets.Clear();
-        _regionOffsets.AddRange(_savedSettings.Regions.Select(r => new RECT
+        _regionOffsets.AddRange(_matchedProfile.Regions.Select(r => new RECT
         {
             Left = r.Left,
             Top = r.Top,
@@ -122,6 +141,14 @@ public partial class MainWindow : Window
         CreateMirrorPreview(clientRect);
     }
 
+    /// <summary>
+    /// Upserts the current target's profile into the saved settings by process name, leaving
+    /// every other saved app's profile untouched — saving a browser's regions must not wipe
+    /// out a previously saved Notepad profile, or vice versa. The updated profile is moved to
+    /// the END of the list, marking it as the most recently used one: if multiple saved
+    /// profiles' apps are running at once, <see cref="RefreshRestoreButton"/> prefers whichever
+    /// was touched most recently rather than whichever happens to be listed first.
+    /// </summary>
     private void SaveCurrentSettings()
     {
         if (NativeMethods.GetWindowThreadProcessId(_targetHwnd, out uint pid) == 0 || pid == 0)
@@ -139,17 +166,28 @@ public partial class MainWindow : Window
             return;
         }
 
-        SettingsStore.Save(new AppSettings
+        var settings = SettingsStore.Load() ?? new AppSettings();
+        var profile = settings.Profiles.FirstOrDefault(p =>
+            string.Equals(p.ProcessName, processName, StringComparison.OrdinalIgnoreCase));
+        if (profile != null)
         {
-            TargetProcessName = processName,
-            Regions = _regionOffsets.Select(r => new SavedRegion
-            {
-                Left = r.Left,
-                Top = r.Top,
-                Width = r.Width,
-                Height = r.Height,
-            }).ToList(),
-        });
+            settings.Profiles.Remove(profile);
+        }
+        else
+        {
+            profile = new TargetProfile { ProcessName = processName };
+        }
+
+        profile.Regions = _regionOffsets.Select(r => new SavedRegion
+        {
+            Left = r.Left,
+            Top = r.Top,
+            Width = r.Width,
+            Height = r.Height,
+        }).ToList();
+        settings.Profiles.Add(profile);
+
+        SettingsStore.Save(settings);
     }
 
     private void OnSelectRegionClick(object sender, RoutedEventArgs e)
@@ -182,6 +220,7 @@ public partial class MainWindow : Window
         _lastKnownClientHeight = clientRect.Height;
 
         SaveCurrentSettings();
+        RefreshRestoreButton();
         CreateMirrorPreview(clientRect);
     }
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace ScreenBlurGuard.Native;
 
@@ -8,6 +9,19 @@ namespace ScreenBlurGuard.Native;
 /// </summary>
 public sealed class WinEventHookService : IDisposable
 {
+    // WINEVENT_OUTOFCONTEXT callbacks are dispatched asynchronously through the hooking
+    // thread's message queue. Calling UnhookWinEvent (e.g. from Dispose, itself often
+    // triggered from inside a callback reacting to EVENT_OBJECT_DESTROY) only stops *future*
+    // hook registrations from firing — it does not cancel a callback that was already queued
+    // before the unhook. If the instance's own field holding the delegate (`_callback`) was
+    // by then the delegate's only remaining root and got nulled out (e.g. the owner's
+    // reference was cleared right after Dispose), the GC is free to collect it, and that
+    // already-queued callback then crashes the process with "callback was made on a garbage
+    // collected delegate". Rooting every callback delegate here for the process's lifetime
+    // closes that race; instances are created rarely (once per mirror session), so never
+    // releasing this list is a negligible, acceptable cost.
+    private static readonly List<NativeMethods.WinEventDelegate> RootedCallbacks = new();
+
     private readonly IntPtr _targetHwnd;
     private readonly NativeMethods.WinEventDelegate _callback;
     private IntPtr _objectHook;
@@ -21,9 +35,8 @@ public sealed class WinEventHookService : IDisposable
     public WinEventHookService(IntPtr targetHwnd)
     {
         _targetHwnd = targetHwnd;
-        // Keep a strong reference to the delegate for the lifetime of the hook —
-        // otherwise the GC can collect it while native code still holds the function pointer.
         _callback = OnWinEvent;
+        RootedCallbacks.Add(_callback);
     }
 
     public void Start()
