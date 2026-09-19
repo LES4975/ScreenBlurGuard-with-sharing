@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using ScreenBlurGuard.Native;
 
 namespace ScreenBlurGuard.Settings;
 
@@ -8,6 +9,16 @@ public sealed class SavedRegion
     public int Top { get; set; }
     public int Width { get; set; }
     public int Height { get; set; }
+
+    public static SavedRegion FromRect(RECT rect) => new()
+    {
+        Left = rect.Left,
+        Top = rect.Top,
+        Width = rect.Width,
+        Height = rect.Height,
+    };
+
+    public RECT ToRect() => RECT.FromLeftTopWidthHeight(Left, Top, Width, Height);
 }
 
 /// <summary>

@@ -13,6 +13,14 @@ public struct RECT
 
     public int Width => Right - Left;
     public int Height => Bottom - Top;
+
+    public static RECT FromLeftTopWidthHeight(int left, int top, int width, int height) => new()
+    {
+        Left = left,
+        Top = top,
+        Right = left + width,
+        Bottom = top + height,
+    };
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -104,6 +112,12 @@ public static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
+
+    /// <summary>GetClientRect, but also rejects a zero/negative-sized result (e.g. a minimized window).</summary>
+    public static bool TryGetValidClientRect(IntPtr hWnd, out RECT rect)
+    {
+        return GetClientRect(hWnd, out rect) && rect.Width > 0 && rect.Height > 0;
+    }
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
