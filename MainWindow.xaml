@@ -5,22 +5,53 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:ScreenBlurGuard"
         mc:Ignorable="d"
-        Title="ScreenBlurGuard - 프로토타입" Height="320" Width="560">
-    <StackPanel Margin="20">
-        <TextBlock TextWrapping="Wrap" Margin="0,0,0,12">
-            1) 메모장(Notepad) 같은 다른 앱을 하나 열어두세요.
-            2) 아래 버튼을 누르면 화면이 어두워지며 선택 모드로 들어갑니다.
-            3) 가리고 싶은 영역을 마우스로 드래그해서 선택하세요. 여러 번 드래그하면 같은 앱 안에
-            영역을 추가로 지정할 수 있습니다. (Enter: 완료 / Backspace: 마지막 영역 취소 / Esc: 전체 취소)
-            4) "공유용 미러" 창이 새로 뜨면, Discord 등에서 화면 공유 시 실제 작업 앱이 아니라
-            이 미러 창을 선택해서 공유하세요.
-        </TextBlock>
+        Title="ScreenBlurGuard" Width="600" SizeToContent="Height"
+        ResizeMode="CanMinimize" Background="#FFF3F3F3">
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="10,9"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+    </Window.Resources>
 
-        <Button Content="영역 선택해서 미러링 창 생성" Click="OnSelectRegionClick" Padding="8" Margin="0,0,0,8" />
+    <StackPanel Margin="24">
+        <TextBlock Text="ScreenBlurGuard" FontSize="22" FontWeight="Bold"/>
+        <TextBlock Text="화면 공유용 선택적 블러" FontSize="12" Foreground="#FF666666" Margin="0,2,0,16"/>
+
+        <Border Background="White" BorderBrush="#FFDDDDDD" BorderThickness="1"
+                CornerRadius="4" Padding="14,12" Margin="0,0,0,16">
+            <StackPanel>
+                <TextBlock Text="사용 방법" FontWeight="Bold" Margin="0,0,0,6"/>
+                <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="#FF444444" LineHeight="19">
+                    <Run Text="1. 블러를 적용할 앱(메모장, 브라우저 등)을 먼저 실행해 두세요."/>
+                    <LineBreak/>
+                    <Run Text="2. &quot;영역 선택해서 미러링 창 생성&quot;을 누르면 화면이 어두워지며 선택 모드로 들어갑니다."/>
+                    <LineBreak/>
+                    <Run Text="3. 가리고 싶은 영역을 드래그로 선택하세요. 첫 드래그로 대상 앱이 고정되고, 이후 드래그마다 영역이 추가됩니다."/>
+                    <LineBreak/>
+                    <Run Text="   (Enter: 완료 · Backspace: 마지막 영역 취소 · Esc: 전체 취소)"/>
+                    <LineBreak/>
+                    <Run Text="4. &quot;공유용 미러&quot; 창이 뜨면, 화면 공유 시 실제 작업 앱이 아니라 이 미러 창을 선택하세요."/>
+                </TextBlock>
+            </StackPanel>
+        </Border>
+
+        <TextBlock Text="대상 지정" FontWeight="Bold" FontSize="12" Foreground="#FF666666" Margin="0,0,0,6"/>
+        <Button Content="영역 선택해서 미러링 창 생성" Click="OnSelectRegionClick"
+                Background="#FF2D7DD2" Foreground="White" BorderThickness="0" FontWeight="Bold"/>
         <Button x:Name="RestoreSettingsButton" Content="저장된 설정 불러오기" Click="OnRestoreSettingsClick"
-                Padding="8" Margin="0,0,0,8" IsEnabled="False" />
-        <Button Content="미러링 창 제거" Click="OnRemoveOverlayClick" Padding="8" Margin="0,0,0,8" />
+                IsEnabled="False"/>
 
-        <TextBlock x:Name="StatusText" Text="대기 중" FontWeight="Bold" Margin="0,8,0,0" />
+        <Separator Margin="0,4,0,12" Background="#FFDDDDDD"/>
+
+        <Button x:Name="RemoveOverlayButton" Content="미러링 창 제거" Click="OnRemoveOverlayClick"
+                IsEnabled="False" Foreground="#FFB00020"/>
+
+        <Border x:Name="StatusBorder" Background="#FFEFEFEF" BorderBrush="#FFDDDDDD" BorderThickness="1"
+                CornerRadius="4" Padding="10,8" Margin="0,12,0,0">
+            <TextBlock x:Name="StatusText" Text="대기 중" FontWeight="Bold" TextWrapping="Wrap" Foreground="#FF333333"/>
+        </Border>
     </StackPanel>
 </Window>

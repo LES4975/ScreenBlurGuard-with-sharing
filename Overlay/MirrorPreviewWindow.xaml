@@ -7,5 +7,14 @@
         Background="Black">
     <Canvas x:Name="RootCanvas">
         <Image x:Name="MirrorImage" Stretch="None" />
+        <!--
+          BlurredMirrorContainer holds the clip geometry (which regions are visible); the
+          Effect lives on the Image INSIDE it. Putting both Clip and Effect on the same
+          element would blur an already-clipped (mostly transparent) bitmap instead of the
+          full frame, producing faded edges instead of a clean blurred patch.
+        -->
+        <Canvas x:Name="BlurredMirrorContainer" IsHitTestVisible="False">
+            <Image x:Name="BlurredMirrorImage" Stretch="None" />
+        </Canvas>
     </Canvas>
 </Window>

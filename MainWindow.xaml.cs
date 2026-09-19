@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Windows;
+using System.Windows.Media;
 using ScreenBlurGuard.Native;
 using ScreenBlurGuard.Overlay;
 using ScreenBlurGuard.Settings;
@@ -50,6 +51,22 @@ public partial class MainWindow : Window
         RefreshRestoreButton();
     }
 
+    private enum StatusLevel { Neutral, Active, Warning, Error }
+
+    private void SetStatus(string text, StatusLevel level = StatusLevel.Neutral)
+    {
+        StatusText.Text = text;
+        (Color background, Color foreground) = level switch
+        {
+            StatusLevel.Active => (Color.FromRgb(0xE3, 0xF6, 0xE8), Color.FromRgb(0x1E, 0x7B, 0x34)),
+            StatusLevel.Warning => (Color.FromRgb(0xFF, 0xF3, 0xCD), Color.FromRgb(0x8A, 0x6D, 0x00)),
+            StatusLevel.Error => (Color.FromRgb(0xFC, 0xE4, 0xE4), Color.FromRgb(0xB0, 0x00, 0x20)),
+            _ => (Color.FromRgb(0xEF, 0xEF, 0xEF), Color.FromRgb(0x33, 0x33, 0x33)),
+        };
+        StatusBorder.Background = new SolidColorBrush(background);
+        StatusText.Foreground = new SolidColorBrush(foreground);
+    }
+
     /// <summary>
     /// Loads saved profiles and, if any of their target processes is currently running,
     /// enables the "저장된 설정 불러오기" button so the user can skip re-selecting regions by
@@ -81,7 +98,7 @@ public partial class MainWindow : Window
 
         if (_matchedProfile == null)
         {
-            StatusText.Text = $"저장된 설정이 {settings.Profiles.Count}개 있지만 해당 앱이 실행 중이 아닙니다.";
+            SetStatus($"저장된 설정이 {settings.Profiles.Count}개 있지만 해당 앱이 실행 중이 아닙니다.");
             return;
         }
 
@@ -113,7 +130,7 @@ public partial class MainWindow : Window
         var hwnd = FindRunningWindowByProcessName(_matchedProfile.ProcessName);
         if (hwnd == IntPtr.Zero)
         {
-            StatusText.Text = "저장된 대상 앱을 찾지 못했습니다. 먼저 해당 앱을 실행하세요.";
+            SetStatus("저장된 대상 앱을 찾지 못했습니다. 먼저 해당 앱을 실행하세요.", StatusLevel.Error);
             return;
         }
 
@@ -123,7 +140,7 @@ public partial class MainWindow : Window
         if (!NativeMethods.GetClientRect(_targetHwnd, out var clientRect) ||
             clientRect.Width <= 0 || clientRect.Height <= 0)
         {
-            StatusText.Text = "대상 창의 클라이언트 영역을 가져오지 못했습니다.";
+            SetStatus("대상 창의 클라이언트 영역을 가져오지 못했습니다.", StatusLevel.Error);
             return;
         }
 
@@ -210,7 +227,7 @@ public partial class MainWindow : Window
         if (!NativeMethods.GetClientRect(_targetHwnd, out var clientRect) ||
             clientRect.Width <= 0 || clientRect.Height <= 0)
         {
-            StatusText.Text = "대상 창의 클라이언트 영역을 가져오지 못했습니다.";
+            SetStatus("대상 창의 클라이언트 영역을 가져오지 못했습니다.", StatusLevel.Error);
             return;
         }
 
@@ -226,7 +243,7 @@ public partial class MainWindow : Window
 
     private void OnSelectionCancelled()
     {
-        StatusText.Text = "영역 선택이 취소되었습니다.";
+        SetStatus("영역 선택이 취소되었습니다.");
     }
 
     private void CreateMirrorPreview(RECT clientRect)
@@ -248,9 +265,10 @@ public partial class MainWindow : Window
         _tracker.TargetDestroyed += OnTargetDestroyed;
         _tracker.Start();
 
-        StatusText.Text = "미러링 창이 생성되었습니다. Discord 등에서 화면 공유 시 " +
-                           "이 '공유용 미러' 창을 선택해서 공유하세요 (전체 화면 공유도 가능합니다) — " +
-                           "실제 작업 앱을 직접 공유하지 마세요, 블러가 적용되지 않습니다.";
+        RemoveOverlayButton.IsEnabled = true;
+        SetStatus("미러링 창이 생성되었습니다. 화면 공유 시 " +
+                  "이 '공유용 미러' 창을 선택해서 공유하세요 (전체 화면 공유도 가능합니다) — " +
+                  "실제 작업 앱을 직접 공유하지 마세요, 블러가 적용되지 않습니다.", StatusLevel.Active);
     }
 
     /// <summary>
@@ -309,7 +327,7 @@ public partial class MainWindow : Window
 
             if (resized)
             {
-                StatusText.Text = "⚠ 대상 창 크기가 변경되었습니다. 블러 위치가 실제 콘텐츠와 어긋났을 수 있으니 영역을 다시 선택해 확인하세요.";
+                SetStatus("⚠ 대상 창 크기가 변경되었습니다. 블러 위치가 실제 콘텐츠와 어긋났을 수 있으니 영역을 다시 선택해 확인하세요.", StatusLevel.Warning);
             }
         });
     }
@@ -319,14 +337,14 @@ public partial class MainWindow : Window
         Dispatcher.Invoke(() =>
         {
             RemoveOverlays();
-            StatusText.Text = "대상 앱이 종료되어 미러링 창을 자동으로 정리했습니다.";
+            SetStatus("대상 앱이 종료되어 미러링 창을 자동으로 정리했습니다.");
         });
     }
 
     private void OnRemoveOverlayClick(object sender, RoutedEventArgs e)
     {
         RemoveOverlays();
-        StatusText.Text = "미러링 창 제거됨.";
+        SetStatus("미러링 창 제거됨.");
     }
 
     private void RemoveOverlays()
@@ -341,5 +359,7 @@ public partial class MainWindow : Window
         _regionOffsets.Clear();
         _lastKnownClientWidth = -1;
         _lastKnownClientHeight = -1;
+
+        RemoveOverlayButton.IsEnabled = false;
     }
 }
