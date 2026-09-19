@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 using System.Windows;
 using ScreenBlurGuard.Native;
 using ScreenBlurGuard.Overlay;
+using ScreenBlurGuard.Settings;
 
 namespace ScreenBlurGuard;
 
@@ -36,9 +39,117 @@ public partial class MainWindow : Window
     private int _lastKnownClientWidth = -1;
     private int _lastKnownClientHeight = -1;
 
+    private AppSettings? _savedSettings;
+
     public MainWindow()
     {
         InitializeComponent();
+        PrepareRestoreButton();
+    }
+
+    /// <summary>
+    /// Loads the last-saved region set (if any) and, only if a window from the same process
+    /// is currently running, enables the "저장된 설정 불러오기" button so the user can skip
+    /// re-selecting regions by hand.
+    /// </summary>
+    private void PrepareRestoreButton()
+    {
+        _savedSettings = SettingsStore.Load();
+        if (_savedSettings is not { Regions.Count: > 0, TargetProcessName: not null })
+        {
+            return;
+        }
+
+        if (FindRunningWindowByProcessName(_savedSettings.TargetProcessName) == IntPtr.Zero)
+        {
+            StatusText.Text = $"저장된 설정({_savedSettings.TargetProcessName})이 있지만 해당 앱이 실행 중이 아닙니다.";
+            return;
+        }
+
+        RestoreSettingsButton.IsEnabled = true;
+        RestoreSettingsButton.Content = $"저장된 설정 불러오기 ({_savedSettings.TargetProcessName}, 영역 {_savedSettings.Regions.Count}개)";
+    }
+
+    private static IntPtr FindRunningWindowByProcessName(string processName)
+    {
+        foreach (var process in Process.GetProcessesByName(processName))
+        {
+            process.Refresh();
+            if (process.MainWindowHandle != IntPtr.Zero)
+            {
+                return process.MainWindowHandle;
+            }
+        }
+
+        return IntPtr.Zero;
+    }
+
+    private void OnRestoreSettingsClick(object sender, RoutedEventArgs e)
+    {
+        if (_savedSettings?.TargetProcessName == null)
+        {
+            return;
+        }
+
+        var hwnd = FindRunningWindowByProcessName(_savedSettings.TargetProcessName);
+        if (hwnd == IntPtr.Zero)
+        {
+            StatusText.Text = "저장된 대상 앱을 찾지 못했습니다. 먼저 해당 앱을 실행하세요.";
+            return;
+        }
+
+        RemoveOverlays();
+        _targetHwnd = hwnd;
+
+        if (!NativeMethods.GetClientRect(_targetHwnd, out var clientRect) ||
+            clientRect.Width <= 0 || clientRect.Height <= 0)
+        {
+            StatusText.Text = "대상 창의 클라이언트 영역을 가져오지 못했습니다.";
+            return;
+        }
+
+        _regionOffsets.Clear();
+        _regionOffsets.AddRange(_savedSettings.Regions.Select(r => new RECT
+        {
+            Left = r.Left,
+            Top = r.Top,
+            Right = r.Left + r.Width,
+            Bottom = r.Top + r.Height,
+        }));
+        _lastKnownClientWidth = clientRect.Width;
+        _lastKnownClientHeight = clientRect.Height;
+
+        CreateMirrorPreview(clientRect);
+    }
+
+    private void SaveCurrentSettings()
+    {
+        if (NativeMethods.GetWindowThreadProcessId(_targetHwnd, out uint pid) == 0 || pid == 0)
+        {
+            return;
+        }
+
+        string processName;
+        try
+        {
+            processName = Process.GetProcessById((int)pid).ProcessName;
+        }
+        catch (ArgumentException)
+        {
+            return;
+        }
+
+        SettingsStore.Save(new AppSettings
+        {
+            TargetProcessName = processName,
+            Regions = _regionOffsets.Select(r => new SavedRegion
+            {
+                Left = r.Left,
+                Top = r.Top,
+                Width = r.Width,
+                Height = r.Height,
+            }).ToList(),
+        });
     }
 
     private void OnSelectRegionClick(object sender, RoutedEventArgs e)
@@ -70,6 +181,7 @@ public partial class MainWindow : Window
         _lastKnownClientWidth = clientRect.Width;
         _lastKnownClientHeight = clientRect.Height;
 
+        SaveCurrentSettings();
         CreateMirrorPreview(clientRect);
     }
 

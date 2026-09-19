@@ -17,6 +17,8 @@
         </TextBlock>
 
         <Button Content="영역 선택해서 미러링 창 생성" Click="OnSelectRegionClick" Padding="8" Margin="0,0,0,8" />
+        <Button x:Name="RestoreSettingsButton" Content="저장된 설정 불러오기" Click="OnRestoreSettingsClick"
+                Padding="8" Margin="0,0,0,8" IsEnabled="False" />
         <Button Content="미러링 창 제거" Click="OnRemoveOverlayClick" Padding="8" Margin="0,0,0,8" />
 
         <TextBlock x:Name="StatusText" Text="대기 중" FontWeight="Bold" Margin="0,8,0,0" />
