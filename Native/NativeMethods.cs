@@ -60,6 +60,7 @@ public static class NativeMethods
 
     public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
     public static readonly IntPtr HWND_TOP = new IntPtr(0);
+    public static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
 
     // DWM_THUMBNAIL_PROPERTIES flags
     public const int DWM_TNP_RECTDESTINATION = 0x1;

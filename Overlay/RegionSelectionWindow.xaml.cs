@@ -263,7 +263,7 @@ public partial class RegionSelectionWindow : Window
             return;
         }
 
-        _confirmedRegions.Add(AddConfirmedRegion(rect, left, top, right, bottom));
+        _confirmedRegions.Add(AddConfirmedRegion(rect));
     }
 
     /// <summary>Converts a screen-space rect to the locked target's client space, clamped to its current client rect.</summary>
@@ -290,11 +290,9 @@ public partial class RegionSelectionWindow : Window
         };
     }
 
-    private ConfirmedRegion AddConfirmedRegion(RECT clientRect, int left, int top, int right, int bottom)
+    private ConfirmedRegion AddConfirmedRegion(RECT clientRect)
     {
-        var topLeftLocal = PointFromScreen(new Point(left, top));
-        var bottomRightLocal = PointFromScreen(new Point(right, bottom));
-        var localRect = new Rect(topLeftLocal, bottomRightLocal);
+        var localRect = ClientRectToLocalRect(clientRect);
 
         var body = new Rectangle
         {
@@ -367,9 +365,8 @@ public partial class RegionSelectionWindow : Window
         {
             foreach (var (dir, handle) in candidate.Handles)
             {
-                double x = Canvas.GetLeft(handle);
-                double y = Canvas.GetTop(handle);
-                if (localPos.X >= x && localPos.X <= x + HandleSize && localPos.Y >= y && localPos.Y <= y + HandleSize)
+                var rect = new Rect(Canvas.GetLeft(handle), Canvas.GetTop(handle), HandleSize, HandleSize);
+                if (rect.Contains(localPos))
                 {
                     region = candidate;
                     direction = dir;

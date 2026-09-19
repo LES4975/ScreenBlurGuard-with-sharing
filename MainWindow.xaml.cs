@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Windows;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using ScreenBlurGuard.Native;
 using ScreenBlurGuard.Overlay;
 using ScreenBlurGuard.Settings;
@@ -41,6 +44,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         _mirrorSession.TargetResized += OnMirrorTargetResized;
         _mirrorSession.TargetDestroyed += OnMirrorTargetDestroyed;
+        _mirrorSession.FrameRendered += frame => SetPreviewFrame(frame);
 
         // Wired here rather than via XAML Checked="..." so IsChecked="True" on BlurStyleRadio
         // doesn't fire before MosaicStyleRadio (and _mirrorSession) exist yet.
@@ -54,6 +58,30 @@ public partial class MainWindow : Window
     {
         IntensityValueText.Text = $"{(int)Math.Round(e.NewValue)}%";
         _mirrorSession.SetIntensity(e.NewValue);
+    }
+
+    /// <summary>
+    /// WPF's stock Slider only "pages" toward a track click by LargeChange; clicking a spot on
+    /// the track should instead jump the handle straight there. Left un-handled (and skipped
+    /// for clicks on the Thumb itself) so the Track's own logic still runs afterward and
+    /// naturally picks up the drag if the user keeps the button held down.
+    /// </summary>
+    private void OnIntensitySliderPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is Thumb)
+        {
+            return;
+        }
+
+        double ratio = Math.Clamp(e.GetPosition(IntensitySlider).X / IntensitySlider.ActualWidth, 0, 1);
+        IntensitySlider.Value = IntensitySlider.Minimum + ratio * (IntensitySlider.Maximum - IntensitySlider.Minimum);
+    }
+
+    /// <summary>Shows (or, with null, clears back to the placeholder) the live "what you're sharing" thumbnail.</summary>
+    private void SetPreviewFrame(BitmapSource? frame)
+    {
+        PreviewImage.Source = frame;
+        PreviewPlaceholderText.Visibility = frame == null ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private enum StatusLevel { Neutral, Active, Warning, Error }
@@ -168,6 +196,7 @@ public partial class MainWindow : Window
     {
         _mirrorSession.Stop();
         RemoveOverlayButton.IsEnabled = false;
+        SetPreviewFrame(null);
 
         Hide();
 
@@ -212,6 +241,7 @@ public partial class MainWindow : Window
     private void OnMirrorTargetDestroyed()
     {
         RemoveOverlayButton.IsEnabled = false;
+        SetPreviewFrame(null);
         SetStatus("대상 앱이 종료되어 미러링 창을 자동으로 정리했습니다.");
     }
 
@@ -219,6 +249,7 @@ public partial class MainWindow : Window
     {
         _mirrorSession.Stop();
         RemoveOverlayButton.IsEnabled = false;
+        SetPreviewFrame(null);
         SetStatus("미러링 창 제거됨.");
     }
 }

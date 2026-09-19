@@ -4,6 +4,7 @@
         Title="공유용 미러 - ScreenBlurGuard"
         SizeToContent="WidthAndHeight"
         ResizeMode="NoResize"
+        ShowActivated="False"
         Background="Black">
     <Canvas x:Name="RootCanvas">
         <Image x:Name="MirrorImage" Stretch="None" />

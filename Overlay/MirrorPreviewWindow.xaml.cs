@@ -54,6 +54,14 @@ public partial class MirrorPreviewWindow : Window
     private double _intensityPercent = 25;
     private BitmapSource? _lastCapturedSource;
 
+    /// <summary>
+    /// Fires after every re-render (each capture tick, and each immediate style/intensity
+    /// switch) with a snapshot of exactly what this window is currently showing — the same
+    /// pixels a screen share would send. Lets <c>MainWindow</c> show a live "what you're
+    /// sharing" thumbnail without duplicating the blur/mosaic compositing logic.
+    /// </summary>
+    public event Action<BitmapSource>? FrameRendered;
+
     public MirrorPreviewWindow(IntPtr targetHwnd, int clientWidth, int clientHeight)
     {
         InitializeComponent();
@@ -66,10 +74,40 @@ public partial class MirrorPreviewWindow : Window
 
         ObscuredMirrorContainer.Clip = new GeometryGroup();
 
+        // ShowActivated="False" (see XAML) only stops this window from stealing keyboard
+        // focus — it does NOT stop Windows from still placing a brand-new top-level window at
+        // the front of the z-order, so it was still popping up in front of (covering) whatever
+        // the user was just looking at. Explicitly sending it to the bottom of the z-order
+        // fixes that — but a single attempt at SourceInitialized (HWND just created, before
+        // first paint) turned out not to reliably stick, something later in Show()'s own
+        // pipeline was putting it back in front. Repeating the same call at Loaded (after the
+        // window is actually shown and laid out) closes that race. Safe here because this app
+        // is only ever screen-shared via "share a specific window" (confirmed with the user) —
+        // that capture mode reads the window's composited surface regardless of on-screen
+        // occlusion, unlike "share entire screen", which would leak the real target's content
+        // if this window were sent behind it while relying on that mode.
+        SourceInitialized += (_, _) => SendToBackOfZOrder();
+        Loaded += (_, _) => SendToBackOfZOrder();
+
         _captureTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
         _captureTimer.Tick += (_, _) => CaptureFrame();
         Loaded += (_, _) => _captureTimer.Start();
         Closed += (_, _) => _captureTimer.Stop();
+    }
+
+    /// <summary>
+    /// Explicitly pushes this window to the bottom of the desktop-wide z-order. Public so the
+    /// caller can also invoke it right after <see cref="Window.Show"/> returns, as one more
+    /// attempt beyond the internal SourceInitialized/Loaded ones — see the constructor's
+    /// comment for why a single attempt wasn't reliable enough.
+    /// </summary>
+    public void SendToBackOfZOrder()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+
+        NativeMethods.SetWindowPos(hwnd, NativeMethods.HWND_BOTTOM, 0, 0, 0, 0,
+            NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
     }
 
     /// <summary>
@@ -165,6 +203,22 @@ public partial class MirrorPreviewWindow : Window
             ObscuredMirrorImage.Height = _captureHeight;
             ObscuredMirrorImage.Source = mosaicSource;
         }
+
+        RaiseFrameRendered();
+    }
+
+    /// <summary>
+    /// Snapshots the already-composited <see cref="RootCanvas"/> (original + obscured regions,
+    /// exactly as shown/shared) into a bitmap for <see cref="FrameRendered"/> subscribers.
+    /// </summary>
+    private void RaiseFrameRendered()
+    {
+        if (FrameRendered == null || _captureWidth <= 0 || _captureHeight <= 0) return;
+
+        var snapshot = new RenderTargetBitmap(_captureWidth, _captureHeight, 96, 96, PixelFormats.Pbgra32);
+        snapshot.Render(RootCanvas);
+        snapshot.Freeze();
+        FrameRendered.Invoke(snapshot);
     }
 
     private void CaptureFrame()

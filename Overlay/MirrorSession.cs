@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Windows;
+using System.Windows.Media.Imaging;
 using ScreenBlurGuard.Native;
 
 namespace ScreenBlurGuard.Overlay;
@@ -40,6 +41,9 @@ public sealed class MirrorSession : IDisposable
     /// <summary>Raised after the target app closed and this session tore itself down.</summary>
     public event Action? TargetDestroyed;
 
+    /// <summary>Forwarded from the active <see cref="MirrorPreviewWindow"/> — see its own doc comment.</summary>
+    public event Action<BitmapSource>? FrameRendered;
+
     /// <summary>
     /// Starts mirroring <paramref name="targetHwnd"/> with the given fixed pixel-offset
     /// regions, tearing down any previous session first. Returns false (leaving no session
@@ -66,7 +70,9 @@ public sealed class MirrorSession : IDisposable
         };
         _mirrorPreview.SetStyle(_style);
         _mirrorPreview.SetIntensity(_intensityPercent);
+        _mirrorPreview.FrameRendered += frame => FrameRendered?.Invoke(frame);
         _mirrorPreview.Show();
+        _mirrorPreview.SendToBackOfZOrder();
 
         if (TryComputeRegions(out var regions, out _))
         {
